@@ -13,3 +13,5 @@ faiss-cpu
 numpy
 
 python-dotenv
+
+python-multipart
