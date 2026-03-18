@@ -1,42 +1,61 @@
-from fastapi import FastAPI, UploadFile, File
-from azure.storage.blob import BlobServiceClient
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from dotenv import load_dotenv
 import os
 from azure.ai.formrecognizer import DocumentAnalysisClient
-from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
 from azure.core.credentials import AzureKeyCredential
 import faiss
 import numpy as np
 import pickle
-
+import google.generativeai as genai
 
 load_dotenv()
 
 app = FastAPI()
-import google.generativeai as genai
-
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
 
 # Load environment variables
 connection_string = os.getenv("BLOB_CONNECTION_STRING")
 container_name = os.getenv("BLOB_CONTAINER_NAME")
+doc_intel_endpoint = os.getenv("DOC_INTEL_ENDPOINT")
+doc_intel_key = os.getenv("DOC_INTEL_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-# Create Blob client
-blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+# Configure Gemini only if key exists
+model = None
+if gemini_api_key:
+    genai.configure(api_key=gemini_api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
-doc_client = DocumentAnalysisClient(
-    endpoint=os.getenv("DOC_INTEL_ENDPOINT"),
-    credential=AzureKeyCredential(os.getenv("DOC_INTEL_KEY"))
-)
+# Create Blob client only if connection string exists
+blob_service_client = None
+if connection_string:
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+
+# Create Document Intelligence client only if credentials exist
+doc_client = None
+if doc_intel_endpoint and doc_intel_key:
+    doc_client = DocumentAnalysisClient(
+        endpoint=doc_intel_endpoint,
+        credential=AzureKeyCredential(doc_intel_key)
+    )
+
+
 @app.get("/")
 def home():
     return {"message": "FinBot v2 is running"}
 
 
+@app.get("/version")
+def version():
+    return {"version": "1.0"}
+
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
+    if not blob_service_client or not container_name:
+        raise HTTPException(status_code=500, detail="Blob service not configured")
+
     blob_client = blob_service_client.get_blob_client(
         container=container_name,
         blob=file.filename
@@ -47,8 +66,13 @@ async def upload_file(file: UploadFile = File(...)):
 
     return {"message": f"{file.filename} uploaded successfully"}
 
+
 @app.post("/extract/{filename}")
 async def extract_document(filename: str):
+    if not blob_service_client or not container_name:
+        raise HTTPException(status_code=500, detail="Blob service not configured")
+    if not doc_client:
+        raise HTTPException(status_code=500, detail="Document Intelligence not configured")
 
     blob_client = blob_service_client.get_blob_client(
         container=container_name,
@@ -74,25 +98,29 @@ async def extract_document(filename: str):
     result = poller.result()
 
     full_text = ""
-
     for page in result.pages:
         for line in page.lines:
             full_text += line.content + "\n"
 
-    # simple chunking (temporary)
     chunk_size = 1000
-    chunks = [full_text[i:i+chunk_size] for i in range(0, len(full_text), chunk_size)]
+    chunks = [full_text[i:i + chunk_size] for i in range(0, len(full_text), chunk_size)]
 
     return {
         "total_characters": len(full_text),
         "total_chunks": len(chunks),
-        "sample_chunk": chunks[0]
+        "sample_chunk": chunks[0] if chunks else ""
     }
+
 
 @app.post("/index/{filename}")
 async def index_document(filename: str):
+    if not blob_service_client or not container_name:
+        raise HTTPException(status_code=500, detail="Blob service not configured")
+    if not doc_client:
+        raise HTTPException(status_code=500, detail="Document Intelligence not configured")
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
 
-    # ----- Generate SAS URL -----
     blob_client = blob_service_client.get_blob_client(
         container=container_name,
         blob=filename
@@ -109,7 +137,6 @@ async def index_document(filename: str):
 
     blob_url = f"{blob_client.url}?{sas_token}"
 
-    # ----- Extract Document -----
     poller = doc_client.begin_analyze_document_from_url(
         "prebuilt-layout",
         blob_url
@@ -122,13 +149,10 @@ async def index_document(filename: str):
         for line in page.lines:
             full_text += line.content + "\n"
 
-    # ----- Chunking -----
     chunk_size = 1000
-    chunks = [full_text[i:i+chunk_size] for i in range(0, len(full_text), chunk_size)]
+    chunks = [full_text[i:i + chunk_size] for i in range(0, len(full_text), chunk_size)]
 
-    # ----- Generate Embeddings -----
     vectors = []
-
     for chunk in chunks:
         embedding = genai.embed_content(
             model="gemini-embedding-001",
@@ -137,14 +161,11 @@ async def index_document(filename: str):
         vectors.append(embedding["embedding"])
 
     vectors_np = np.array(vectors).astype("float32")
-
     dimension = vectors_np.shape[1]
 
-    # ----- Create FAISS Index -----
     index = faiss.IndexFlatL2(dimension)
     index.add(vectors_np)
 
-    # ----- Save Index + Metadata -----
     faiss.write_index(index, "faiss_index.index")
 
     with open("metadata.pkl", "wb") as f:
@@ -155,16 +176,20 @@ async def index_document(filename: str):
         "vector_dimension": dimension
     }
 
+
 @app.post("/ask")
 async def ask_question(question: str):
+    if not gemini_api_key or not model:
+        raise HTTPException(status_code=500, detail="Gemini API key not configured")
 
-    # ----- Load FAISS index -----
+    if not os.path.exists("faiss_index.index") or not os.path.exists("metadata.pkl"):
+        raise HTTPException(status_code=500, detail="Index files not found. Run /index first.")
+
     index = faiss.read_index("faiss_index.index")
 
     with open("metadata.pkl", "rb") as f:
         chunks = pickle.load(f)
 
-    # ----- Embed Question -----
     query_embedding = genai.embed_content(
         model="gemini-embedding-001",
         content=question
@@ -172,13 +197,11 @@ async def ask_question(question: str):
 
     query_vector = np.array([query_embedding]).astype("float32")
 
-    # ----- Retrieve Top-5 -----
-    k = 5
+    k = min(5, len(chunks))
     distances, indices = index.search(query_vector, k)
 
-    retrieved_chunks = [chunks[i] for i in indices[0]]
+    retrieved_chunks = [chunks[i] for i in indices[0] if i < len(chunks)]
 
-    # ----- Build Financial Prompt -----
     context = "\n\n".join(retrieved_chunks)
 
     prompt = f"""
@@ -195,14 +218,9 @@ Question:
 {question}
 """
 
-    # ----- Generate Answer -----
     response = model.generate_content(prompt)
 
     return {
         "answer": response.text,
         "retrieved_chunks_count": len(retrieved_chunks)
     }
-
-@app.get("/version")
-def version():
-    return {"version": "1.0"}
