@@ -1,0 +1,15 @@
+fastapi
+
+uvicorn
+
+azure-storage-blob
+
+azure-ai-formrecognizer
+
+google-generativeai
+
+faiss-cpu
+
+numpy
+
+python-dotenv

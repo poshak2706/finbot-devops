@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+.env
+.git
+.gitignore
+.vscode
+*.pkl
+*.index
