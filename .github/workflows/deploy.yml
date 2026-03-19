@@ -26,64 +26,32 @@ jobs:
       run: |
         python -c "import main"
 
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
     - name: Build Docker image
       run: |
         docker build -t finbot-app .
 
+    - name: Login to ACR
+      run: |
+        az acr login --name finbotacr12345
 
-name: CI/CD Pipeline
+    - name: Tag image
+      run: |
+        docker tag finbot-app:${{ github.sha }} finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
 
-on:
-  push:
-    branches:
-      - main
+    - name: Push to ACR
+      run: |
+        docker push finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    - name: Set AKS context
+      run: |
+        az aks get-credentials --resource-group finbot-rg --name finbot-aks3 --overwrite-existing
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Deploy to AKS
+      run: |
+        kubectl set image deployment/finbot finbot=finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Test import
-        run: |
-          python -c "import main"
-
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Build Docker image
-        run: |
-          docker build -t finbot-app:${{ github.sha }} .
-
-      - name: Login to ACR
-        run: |
-          az acr login --name finbotacr12345
-
-      - name: Tag image
-        run: |
-          docker tag finbot-app:${{ github.sha }} finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
-
-      - name: Push to ACR
-        run: |
-          docker push finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
-
-      - name: Set AKS context
-        run: |
-          az aks get-credentials --resource-group finbot-rg --name finbot-aks3 --overwrite-existing
-
-      - name: Deploy to AKS
-        run: |
-          kubectl set image deployment/finbot finbot=finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
