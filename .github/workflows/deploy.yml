@@ -31,21 +31,17 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Build Docker image
-      run: |
-        docker build -t finbot-app .
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-    - name: Login to ACR
-      run: |
-        az acr login --name finbotacr12345
-
-    - name: Tag image
-      run: |
-        docker tag finbot-app finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
-
-    - name: Push to ACR
-      run: |
-        docker push finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
+    - name: Build and push with cache
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
+        cache-from: type=registry,ref=finbotacr12345.azurecr.io/finbot-app:cache
+        cache-to: type=registry,ref=finbotacr12345.azurecr.io/finbot-app:cache,mode=max
 
     - name: Install kubectl
       uses: azure/setup-kubectl@v3
