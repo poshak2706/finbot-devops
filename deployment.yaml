@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finbot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finbot
+  template:
+    metadata:
+      labels:
+        app: finbot
+    spec:
+      containers:
+      - name: finbot
+        image: finbotacr12345.azurecr.io/finbot-app:v1
+        ports:
+        - containerPort: 8000
