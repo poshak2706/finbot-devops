@@ -41,11 +41,14 @@ jobs:
 
     - name: Tag image
       run: |
-        docker tag finbot-app:${{ github.sha }} finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
+        docker tag finbot-app finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
 
     - name: Push to ACR
       run: |
         docker push finbotacr12345.azurecr.io/finbot-app:${{ github.sha }}
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
 
     - name: Set AKS context
       run: |
