@@ -13,10 +13,10 @@ spec:
         app: finbot
     spec:
       containers:
-      - name: finbot
-        image: finbotacr12345.azurecr.io/finbot-app:v1
-        ports:
-          - containerPort: 8000
-        env:
-          - name: APPINSIGHTS_CONNECTION_STRING
-            value: "InstrumentationKey=8f335cc1-d2f0-4348-97eb-be6e4b505ae1;IngestionEndpoint=https://centralindia-0.in.applicationinsights.azure.com/;LiveEndpoint=https://centralindia.livediagnostics.monitor.azure.com/;ApplicationId=698bcb09-1648-4f55-ba8e-03d2ddf54bbd"
+        - name: finbot
+          image: finbotacr12345.azurecr.io/finbot-app:v1
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APPINSIGHTS_CONNECTION_STRING
+              value: "InstrumentationKey=8f335cc1-d2f0-4348-97eb-be6e4b505ae1;IngestionEndpoint=https://centralindia-0.in.applicationinsights.azure.com/;LiveEndpoint=https://centralindia.livediagnostics.monitor.azure.com/;ApplicationId=698bcb09-1648-4f55-ba8e-03d2ddf54bbd"
