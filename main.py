@@ -45,11 +45,13 @@ if doc_intel_endpoint and doc_intel_key:
 
 @app.get("/")
 def home():
+    logger.info("Home log")
     return {"message": "FinBot v2 is running"}
 
 
 @app.get("/version")
 def version():
+    logger.info("version checked")
     return {"version": "2.0- azure is cool"}
 
 
@@ -84,6 +86,8 @@ async def upload_file(file: UploadFile = File(...)):
 
     file_data = await file.read()
     blob_client.upload_blob(file_data, overwrite=True)
+
+    logger.info("File uploaded via /upload")
 
     return {"message": f"{file.filename} uploaded successfully"}
 
@@ -240,6 +244,8 @@ Question:
 """
 
     response = model.generate_content(prompt)
+
+    logger.info("Query retrieved via LLM")
 
     return {
         "answer": response.text,
