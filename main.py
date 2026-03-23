@@ -9,6 +9,8 @@ import faiss
 import numpy as np
 import pickle
 import google.generativeai as genai
+from opencensus.ext.azure.log_exporter import AzureLogHandler
+import logging
 
 load_dotenv()
 
@@ -50,6 +52,25 @@ def home():
 def version():
     return {"version": "2.0- azure is cool"}
 
+
+
+logger = logging.getLogger(__name__)
+logger.addHandler(AzureLogHandler(connection_string=os.getenv("APPINSIGHTS_CONNECTION_STRING")))
+logger.setLevel(logging.INFO)
+
+@app.get("/health")
+def health():
+    logger.info("Health check endpoint called")
+    return {"status": "healthy"}
+
+@app.get("/stock/{symbol}")
+def get_stock(symbol: str):
+    logger.info(f"Stock requested: {symbol}")
+    return {
+        "symbol": symbol.upper(),
+        "price": 100 + len(symbol),
+        "currency": "USD"
+    }
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):

@@ -15,3 +15,5 @@ numpy
 python-dotenv
 
 python-multipart
+
+opencensus-ext-azure
